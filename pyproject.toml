@@ -1,0 +1,9 @@
+[project]
+name = "computer-use-agent-infra"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.8,<3.9"
+dependencies = [
+    "fastapi[standard]>=0.124.4",
+]
