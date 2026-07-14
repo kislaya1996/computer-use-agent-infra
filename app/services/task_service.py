@@ -1,21 +1,29 @@
-import subprocess
-import sys
 import uuid
-from pathlib import Path
+
+import docker
 
 from app.schemas.task import TaskRequest, TaskResponse
 
-SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "placeholder_task.py"
+WORKER_IMAGE = "cua-worker:local"
 
 
 def run_task(task: TaskRequest) -> TaskResponse:
     task_id = str(uuid.uuid4())
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), task.name, task.payload],
-        capture_output=True,
-        text=True,
-        check=False,
+    client = docker.from_env()
+    container = client.containers.run(
+        WORKER_IMAGE,
+        command=["python", "-u", "/app/run_task.py", task.name, task.payload],
+        environment={
+            "TASK_ID": task_id,
+            "TASK_NAME": task.name,
+            "TASK_PAYLOAD": task.payload,
+        },
+        detach=True,
+        remove=True,
     )
-    status = "completed" if completed.returncode == 0 else "failed"
-    result = completed.stdout.strip() if completed.returncode == 0 else completed.stderr.strip()
-    return TaskResponse(task_id=task_id, name=task.name, status=status, result=result)
+    return TaskResponse(
+        task_id=task_id,
+        name=task.name,
+        status="started",
+        result=container.id,
+    )

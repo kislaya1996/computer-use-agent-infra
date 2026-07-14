@@ -1,9 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.dependencies import verify_api_key
 from app.schemas.task import TaskRequest, TaskResponse
 from app.services import task_service
 
-router = APIRouter(prefix="/tasks", tags=["tasks"])
+router = APIRouter(
+    prefix="/tasks",
+    tags=["tasks"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 @router.post("/", response_model=TaskResponse)
