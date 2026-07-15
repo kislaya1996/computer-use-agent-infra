@@ -1,21 +1,25 @@
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 import docker
+from docker import DockerClient
 
 from app.schemas.task import TaskRequest, TaskResponse
 
 WORKER_IMAGE = "cua-worker:local"
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
+MAX_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 2
 
 
 def run_task(task: TaskRequest) -> TaskResponse:
     task_id = str(uuid.uuid4())
     client = docker.from_env()
+
     container = client.containers.run(
         WORKER_IMAGE,
-        command=["python", "-u", "/app/run_task.py", task.name, task.payload],
         environment={
             "TASK_ID": task_id,
             "TASK_NAME": task.name,
@@ -27,27 +31,52 @@ def run_task(task: TaskRequest) -> TaskResponse:
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     run_dir = RUNS_DIR / f"{container.id[:12]}_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
-    log_path = run_dir / "worker.log"
 
+    exit_code = 1
+    attempt = 0
     try:
-        with log_path.open("w", encoding="utf-8") as log_file:
-            for chunk in container.logs(stream=True, follow=True):
-                log_file.write(chunk.decode("utf-8", errors="replace"))
-                log_file.flush()
-        exit_code = int(container.wait().get("StatusCode", 1))
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            log_path = run_dir / f"attempt_{attempt}.log"
+            exit_code = _exec_task(client, container.id, task, log_path, attempt)
+            if exit_code == 0:
+                break
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(RETRY_BACKOFF_SECONDS)
     finally:
         container.remove(force=True)
-        # could add remove as a parameter to run, but then 
-        # container.logs cannot be streamed. It ends up in a race condition where 
-        # logs to be written and remove compete. This gives a lot more control.
-        # We can further break down container.run into container.create->container.start->logic->container.remove
 
     return TaskResponse(
         task_id=task_id,
         name=task.name,
         status="completed" if exit_code == 0 else "failed",
-        result=str(log_path),
+        result=f"exit_code={exit_code} after {attempt} attempt(s)",
         container_id=container.id,
         exit_code=exit_code,
-        log_path=str(log_path),
+        log_path=str(run_dir),
+        attempts=attempt,
     )
+
+
+def _exec_task(
+    client: DockerClient,
+    container_id: str,
+    task: TaskRequest,
+    log_path: Path,
+    attempt: int,
+) -> int:
+    api = client.api
+    exec_id = api.exec_create(
+        container_id,
+        cmd=["python", "-u", "/app/run_task.py", task.name, task.payload],
+    )["Id"]
+    stream = api.exec_start(exec_id, stream=True)
+
+    with log_path.open("w", encoding="utf-8") as log_file:
+        log_file.write(f"=== attempt {attempt} ===\n")
+        log_file.flush()
+        for chunk in stream:
+            log_file.write(chunk.decode("utf-8", errors="replace"))
+            log_file.flush()
+
+    code = api.exec_inspect(exec_id).get("ExitCode")
+    return code if isinstance(code, int) else 1

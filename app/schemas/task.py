@@ -16,3 +16,4 @@ class TaskResponse(BaseModel):
     container_id: Optional[str] = None
     exit_code: Optional[int] = None
     log_path: Optional[str] = None
+    attempts: Optional[int] = None

@@ -17,7 +17,11 @@ curl -X POST http://127.0.0.1:8000/tasks/ \
   -d '{"name": "demo", "payload": "playwright python"}'
 ```
 
-The container's live output is streamed to `runs/<container_id>_<timestamp>/worker.log`.
+Each task gets its own container: it boots once (idle keep-alive), then the service
+runs the task via `docker exec`. On failure the container is kept warm and the task
+is retried (up to 3 attempts); the container is removed once the task succeeds or the
+retry limit is reached. Each attempt's live output is streamed to
+`runs/<container_id>_<timestamp>/attempt_<n>.log`.
 
 Note: Google may present a consent wall or CAPTCHA to automated headless browsers;
 the script dismisses common consent dialogs best-effort and logs a clear message if

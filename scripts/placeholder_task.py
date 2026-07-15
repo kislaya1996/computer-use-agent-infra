@@ -2,7 +2,8 @@ import os
 import sys
 from urllib.parse import quote_plus
 
-from playwright.sync_api import Page, sync_playwright
+# playwright is provided by the worker Docker image, not the app venv (py3.8)
+from playwright.sync_api import Page, sync_playwright  # type: ignore
 
 DEFAULT_QUERY = "BraveBird AI"
 RESULT_COUNT = 5
