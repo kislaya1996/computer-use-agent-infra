@@ -5,6 +5,7 @@ WORKDIR /app
 RUN python -m pip install --no-cache-dir playwright==1.61.0
 
 COPY scripts/placeholder_task.py /app/run_task.py
+COPY scripts/healthcheck.py /app/healthcheck.py
 ENV PYTHONUNBUFFERED=1
 
 CMD ["sleep", "infinity"]

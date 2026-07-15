@@ -12,6 +12,8 @@ WORKER_IMAGE = "cua-worker:local"
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 MAX_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 2
+READY_TIMEOUT_SECONDS = 30
+READY_POLL_INTERVAL_SECONDS = 0.5
 
 
 def run_task(task: TaskRequest) -> TaskResponse:
@@ -35,6 +37,7 @@ def run_task(task: TaskRequest) -> TaskResponse:
     exit_code = 1
     attempt = 0
     try:
+        _wait_until_ready(client, container)
         for attempt in range(1, MAX_ATTEMPTS + 1):
             log_path = run_dir / f"attempt_{attempt}.log"
             exit_code = _exec_task(client, container.id, task, log_path, attempt)
@@ -55,6 +58,22 @@ def run_task(task: TaskRequest) -> TaskResponse:
         log_path=str(run_dir),
         attempts=attempt,
     )
+
+
+def _wait_until_ready(client: DockerClient, container) -> None:
+    api = client.api
+    probe = ["python", "/app/healthcheck.py"]
+    deadline = time.time() + READY_TIMEOUT_SECONDS
+    while time.time() < deadline:
+        container.reload()
+        if container.status == "exited":
+            raise RuntimeError("worker container exited before becoming ready")
+        exec_id = api.exec_create(container.id, probe)["Id"]
+        api.exec_start(exec_id)
+        if api.exec_inspect(exec_id).get("ExitCode") == 0:
+            return
+        time.sleep(READY_POLL_INTERVAL_SECONDS)
+    raise TimeoutError(f"worker not ready within {READY_TIMEOUT_SECONDS}s")
 
 
 def _exec_task(
