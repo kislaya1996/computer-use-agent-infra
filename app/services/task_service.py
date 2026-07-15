@@ -1,10 +1,13 @@
 import uuid
+from datetime import datetime
+from pathlib import Path
 
 import docker
 
 from app.schemas.task import TaskRequest, TaskResponse
 
 WORKER_IMAGE = "cua-worker:local"
+RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 
 
 def run_task(task: TaskRequest) -> TaskResponse:
@@ -19,11 +22,28 @@ def run_task(task: TaskRequest) -> TaskResponse:
             "TASK_PAYLOAD": task.payload,
         },
         detach=True,
-        remove=True,
     )
+
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    run_dir = RUNS_DIR / f"{container.id[:12]}_{timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path = run_dir / "worker.log"
+
+    try:
+        with log_path.open("w", encoding="utf-8") as log_file:
+            for chunk in container.logs(stream=True, follow=True):
+                log_file.write(chunk.decode("utf-8", errors="replace"))
+                log_file.flush()
+        exit_code = int(container.wait().get("StatusCode", 1))
+    finally:
+        container.remove(force=True)
+
     return TaskResponse(
         task_id=task_id,
         name=task.name,
-        status="started",
-        result=container.id,
+        status="completed" if exit_code == 0 else "failed",
+        result=str(log_path),
+        container_id=container.id,
+        exit_code=exit_code,
+        log_path=str(log_path),
     )

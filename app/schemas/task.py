@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -11,3 +13,6 @@ class TaskResponse(BaseModel):
     name: str
     status: str
     result: str
+    container_id: Optional[str] = None
+    exit_code: Optional[int] = None
+    log_path: Optional[str] = None
