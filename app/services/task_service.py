@@ -37,6 +37,10 @@ def run_task(task: TaskRequest) -> TaskResponse:
         exit_code = int(container.wait().get("StatusCode", 1))
     finally:
         container.remove(force=True)
+        # could add remove as a parameter to run, but then 
+        # container.logs cannot be streamed. It ends up in a race condition where 
+        # logs to be written and remove compete. This gives a lot more control.
+        # We can further break down container.run into container.create->container.start->logic->container.remove
 
     return TaskResponse(
         task_id=task_id,
