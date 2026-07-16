@@ -7,10 +7,20 @@ from app.services import task_service
 router = APIRouter(
     prefix="/tasks",
     tags=["tasks"],
-    dependencies=[Depends(verify_api_key)],
 )
 
 
-@router.post("/", response_model=TaskResponse)
-def create_task(task: TaskRequest) -> TaskResponse:
-    return task_service.run_task(task)
+@router.post("/", response_model=TaskResponse, status_code=202)
+def create_task(
+    task: TaskRequest,
+    user_id: str = Depends(verify_api_key),
+) -> TaskResponse:
+    return task_service.enqueue_task(task, user_id)
+
+
+@router.get("/{task_id}", response_model=TaskResponse)
+def get_task(
+    task_id: str,
+    user_id: str = Depends(verify_api_key),
+) -> TaskResponse:
+    return task_service.get_task(task_id)
